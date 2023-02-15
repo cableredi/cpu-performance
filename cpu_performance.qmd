@@ -1,0 +1,645 @@
+---
+title: "CPU Performance"
+format: 
+    pdf:
+        toc: false
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+
+# Load Libraries
+library(tidyr)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(car)
+library(caTools)
+library(caret)
+library(WVPlots)
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+## About
+
+### Title
+Relative CPU Performance Data, described in terms of its cycle time, memory size, etc.
+
+### Data Source
+* Feldmesser,Jacob. (1987). Computer Hardware. UCI Machine Learning Repository.
+* https://archive-beta.ics.uci.edu/dataset/29/computer+hardware
+
+### Relevant Information
+The estimated relative performance values were estimated by the authors using a linear regression method.
+
+## Dataset
+
+### Load CPU Perfomance dataset
+
+Data Dictionary
+
+| Column      | Description                                                        |
+|------------------------|:----------------------------------------------|
+| vendor name | 30 different vendor                                                |
+| Model Name  | many unique symbols                                                |
+| MYCT        | machine cycle time in nanoseconds (integer)                        |
+| MMIN        | minimum main memory in kilobytes (integer)                         |
+| MMAX        | maximum main memory in kilobytes (integer)                         |
+| CACH        | cache memory in kilobytes (integer)                                |
+| CHMIN       | minimum channels in units (integer)                                |
+| CHMAX       | maximum channels in units (integer)                                |
+| PRP         | published relative performance (integer)                           |
+| ERP         | estimated relative performance from the original article (integer) |
+
+Class Distribution: the class value (PRP) is continuously valued.
+
+| PRP Value Range | Number of Instances in Range |
+|-----------------|:-----------------------------|
+| 0-20            | 31                           |
+| 21-100          | 121                          |
+| 101-200         | 27                           |
+| 201-300         | 13                           |
+| 301-400         | 7                            |
+| 401-500         | 4                            |
+| 501-600         | 2                            |
+| above 600       | 4                            |
+
+
+```{r}
+#| label: loadperformance
+#| echo: false
+
+
+col_names = c('Vendor', 'Model', 'MYCT', 'MMIN',
+              'MMAX', 'CACH', 'CHMIN', 'CHMAX',
+              'PRP', 'ERP')
+performance_df = read.table('data/machine.data',sep=',', 
+                            header = FALSE, col.names = col_names)
+
+head(performance_df)
+```
+
+### Summary Statistics
+
+```{r}
+#| label: summary
+#| echo: false
+
+summary(performance_df)
+```
+
+### Glimpse of Data
+
+```{r}
+#| label: glimpse
+#| echo: false
+
+glimpse(performance_df)
+```
+
+## Visual Analysis
+
+### Histograms
+
+```{r}
+#| label: histograms
+#| echo: False
+
+fig <- performance_df %>% 
+    pivot_longer(cols = 3:10) %>% 
+    ggplot(aes(value)) + 
+    geom_boxplot(color = 'blue') +
+    facet_wrap(~name, scales = "free")
+
+fig
+
+```
+All of the features have some outliers.
+
+### Performance per Vendor
+
+```{r}
+#| label: vendorperformance
+#| echo: False
+
+fig <- ggplot(performance_df, aes(fill = Vendor, y = PRP, x = Vendor))  +
+    geom_bar(position = 'dodge', stat = 'identity') +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.25, hjust = 1))
+
+fig
+
+```
+
+Amdahl and Sperry have the highest performance
+
+### Performance per Model of Sperry
+
+```{r}
+#| label: sperryperformance
+#| echo: False
+
+sperry_df <- performance_df %>%
+    filter(Vendor == 'sperry')
+
+fig <- ggplot(sperry_df, aes(y = PRP, x = Model, fill = PRP))  +
+    geom_bar(position = 'dodge', stat = 'identity') +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.25, hjust = 1))
+
+fig
+
+```
+
+The better performing Sperry is model #1100/94
+
+## Correlations
+
+### Drop Vendor, Model, and ERP from dataset
+
+```{r}
+#| label: correlationdata
+#| echo: False
+
+corr_df <- performance_df[,3:9]
+head(corr_df)
+
+```
+
+### Run correlation
+
+```{r}
+#| label: correction
+#| echo: False
+
+performance_corr <- round(cor(corr_df), 2)
+
+head(performance_corr)
+
+```
+
+### Correlation heatmap
+
+```{r}
+#| label: corrheatmap
+#| echo: False
+
+
+# reorder corr matrix
+# using corr coefficient as distance metric
+dist <- as.dist((1 - performance_corr)/2)
+ 
+# hierarchical clustering the dist matrix
+hc <- hclust(dist)
+performance_corr <- performance_corr[hc$order, hc$order]
+
+# reduce the size of correlation matrix
+melted_corr_mat <- melt(performance_corr)
+ 
+# plotting the correlation heatmap
+fig <- ggplot(data = melted_corr_mat, aes(x = Var1, y = Var2, fill = value)) +
+    geom_tile() +
+    geom_text(aes(Var2, Var1, label = value),
+          color = "white", size = 4)
+
+fig
+
+```
+
+__From the correlation matrix we can see:__
+
+* PRP and MMAX are highly correlated
+
+* PRP and CACH are highly correlated
+
+* PRP and CHMAX are highly correlated
+
+* PRP and MMIN are highly correlated
+
+* PRP and CHMIN are highly correlated
+
+## Scatterplot of PRP vs features
+
+### PRP vs MYCT
+
+```{r}
+#| label: PRPvsMYCT
+#| echo: False
+
+fig <- ggplot(performance_df, aes(x = MYCT, y = PRP)) +
+    geom_point(aes(color = Vendor)) +
+    labs(
+        x = 'MYCT',
+        y = 'PRP'
+    )
+
+fig
+
+```
+
+### PRP vs MYCT
+
+```{r}
+#| label: PRPvsMMIN
+#| echo: False
+
+fig <- ggplot(performance_df, aes(x = MMIN, y = PRP)) +
+    geom_point(aes(color = Vendor)) +
+    labs(
+        x = 'MMIN',
+        y = 'PRP'
+    )
+
+fig
+
+```
+
+### PRP vs MMAX
+
+```{r}
+#| label: PRPvsMMAX
+#| echo: False
+
+fig <- ggplot(performance_df, aes(x = MMAX, y = PRP)) +
+    geom_point(aes(color = Vendor)) +
+    labs(
+        x = 'MMAX',
+        y = 'PRP'
+    )
+
+fig
+
+```
+
+### PRP vs CACH
+
+```{r}
+#| label: PRPvsCACH
+#| echo: False
+
+fig <- ggplot(performance_df, aes(x = CACH, y = PRP)) +
+    geom_point(aes(color = Vendor)) +
+    labs(
+        x = 'CACH',
+        y = 'PRP'
+    )
+
+fig
+
+```
+
+### PRP vs CHMIN
+
+```{r}
+#| label: PRPvsCHMIN
+#| echo: False
+
+fig <- ggplot(performance_df, aes(x = CHMIN, y = PRP)) +
+    geom_point(aes(color = Vendor)) +
+    labs(
+        x = 'CHMIN',
+        y = 'PRP'
+    )
+
+fig
+
+```
+
+### PRP vs CHMAX
+
+```{r}
+#| label: PRPvsCHMAX
+#| echo: False
+
+fig <- ggplot(performance_df, aes(x = CHMAX, y = PRP)) +
+    geom_point(aes(color = Vendor)) +
+    labs(
+        x = 'CHMAX',
+        y = 'PRP'
+    )
+
+fig
+
+```
+
+## Model
+
+### Split data into training and test datasets
+
+```{r}
+#| label: splitdata
+#| echo: false
+
+set.seed(123)
+split = sample.split(corr_df$PRP, SplitRatio = 0.8)
+
+train_df = subset(corr_df, split == TRUE)
+test_df = subset(corr_df, split == FALSE)
+
+cat('train: ', dim(train_df), '\n')
+cat('test: ', dim(test_df))
+
+```
+
+### Training dataset
+
+```{r}
+#| label: traindata
+#| echo: false
+
+head(train_df)
+
+```
+
+### Check distribution of PRP response variable
+
+```{r}
+#| label: distribution
+#| echo: False
+
+ggplot(train_df, aes(PRP)) +
+  geom_density(fill = 'blue')
+
+ggplot(train_df, aes(log(PRP))) +
+  geom_density(fill = 'blue')
+
+ggplot(train_df, aes(sqrt(PRP))) +
+  geom_density(fill = 'blue')
+```
+
+The log transformation of the PRP response variable is closer to normal so we will use that
+
+### Log PRP
+
+```{r}
+#| label: logresponse
+#| echo: False
+
+train_df$PRP <- log(train_df$PRP)
+test_df$PRP <- log(test_df$PRP)
+
+head(train_df)
+```
+
+
+
+### Regression model 1 - All features
+
+```{r}
+#| label: model1fit
+#| echo: False
+
+# Fit all to training
+performance_lm_1 <- lm(PRP ~., data = train_df)
+
+performance_lm_1
+```
+
+### Summary Statistics
+
+```{r}
+#| label: model1summary
+#| echo: False
+
+summary(performance_lm_1)
+```
+
+### Visualize model
+
+```{r}
+#| label: model1plot
+#| echo: False
+
+par(mfrow = c(2, 2))
+plot(performance_lm_1)
+
+```
+
+The adjusted R-squared is .8196, meaning the independent variables explain
+82% of the variance of the CPU performance.
+
+Three variables (MYCT, MMAX, CACH) show very low p-values (less than 0.05) and are significant
+
+The residuals vs fitted plot show the trend line close to zero except after around 5.5
+
+The Q_Q plot shows us that the features are normal except for the ends
+
+
+### Regression Model 2 - features MYCT, MMAX, CACH only
+
+```{r}
+#| label: model2update
+#| echo: False
+
+# Fit model
+performance_lm_2 <- update(performance_lm_1, ~.-MMIN-CHMIN-CHMAX)
+
+performance_lm_2
+```
+### Summary Statistics
+
+```{r}
+#| label: model2summary
+#| echo: False
+
+summary(performance_lm_2)
+```
+
+### Visualize model
+
+```{r}
+#| label: model2plot
+#| echo: False
+
+par(mfrow = c(2, 2))
+plot(performance_lm_2)
+
+```
+
+The F-statistic is much higher than in model 1 and all features are significant.
+The R2 is a little higher than in model 1.
+
+### Check predictor vs residual plot
+
+```{r}
+#| label: predictorresidual
+#| echo: False
+
+attach(train_df)
+require(gridExtra)
+
+plot1 = ggplot(train_df, aes(MYCT, residuals(performance_lm_2))) + 
+  geom_point() + 
+  geom_smooth()
+
+plot2 = ggplot(train_df, aes(MMIN, residuals(performance_lm_2))) + 
+  geom_point() + 
+  geom_smooth()
+
+plot3 = ggplot(train_df, aes(MMAX, residuals(performance_lm_2))) + 
+  geom_point() + 
+  geom_smooth()
+
+plot4 = ggplot(train_df, aes(CACH, residuals(performance_lm_2))) + 
+  geom_point() + 
+  geom_smooth()
+
+plot5 = ggplot(train_df, aes(CHMIN, residuals(performance_lm_2))) + 
+  geom_point() + 
+  geom_smooth()
+
+plot6 = ggplot(train_df, aes(CHMAX, residuals(performance_lm_2))) + 
+  geom_point() + 
+  geom_smooth()
+
+grid.arrange(plot1, plot2, plot3, plot4, plot5, plot6, ncol = 2, nrow = 3)
+```
+
+### ANOVA Test - Model 2
+
+```{r}
+#| label: anova
+#| echo: False
+
+
+anova(performance_lm_2)
+```
+
+#### Predict PRP with model 2
+
+```{r}
+#| label: prediction
+#| echo: False
+
+predicted_fit <- predict(performance_lm_2, newdata = test_df)
+
+predicted_df <- data.frame(
+  ERP = predict(performance_lm_2, newdata = test_df),
+  PRP = test_df$PRP,
+  MYCT = test_df$MYCT, 
+  MMIN = test_df$MMIN, 
+  MMAX = test_df$MMAX,
+  CACH = test_df$CACH, 
+  CHMIN = test_df$CHMIN,
+  CHMAX = test_df$CHMAX
+  )
+
+head(predicted_df)
+```
+
+## Plot predicted PRP vs PRP
+
+```{r}
+#| label: plotpred
+#| echo: False
+
+fig <- ggplot(predicted_df, aes(x = ERP, y = PRP)) +
+  geom_point(color = 'blue') +
+  geom_abline(color = 'red')
+
+
+fig
+```
+
+
+### Residuals vs Prediction
+
+```{r}
+#| label: plotresiduals
+#| echo: False
+
+predicted_df$Residuals <- predicted_df$PRP - predicted_df$ERP
+
+fig <- ggplot(predicted_df, aes(x = ERP, y = Residuals)) +
+  geom_pointrange(aes(ymin = 0, ymax = Residuals)) +
+  geom_hline(yintercept = 0, linetype = 3) +
+  ggtitle('Residuals vs Linear Model Predication')
+
+fig
+```
+
+The plot shows the prediction errors vary from the PRP
+
+### Gain Curve plot
+
+```{r}
+#| label: gaincurve
+#| echo: False
+
+GainCurvePlot(predicted_df, 'ERP', 'PRP', 'Performance Model')
+```
+
+The Gini score of 0.88 shows that the model correctly sorts high performance from lower ones.
+
+### Performance on Test data
+
+```{r}
+#| label: performance
+#| echo: False
+
+rmse <- RMSE(predicted_fit, test_df$PRP)
+r2 <- R2(predicted_fit, test_df$PRP)
+sd <- sd(predicted_df$PRP)
+
+cat('RMSE: ', rmse, '\n')
+cat('Std Deviation: ', sd, '\n')
+cat('r2: ', r2, '\n')
+```
+The RMSE is lower than the Std deviation so the model predicts the PRP well.
+The R2 is 73% which shows that the model predicts pretty well
+
+
+
+## Cross Validation
+
+### Split data
+
+```{r}
+#| label: splitcross
+#| echo: False
+
+library(vtreat)
+
+nRows <- nrow(performance_df)
+
+splitPlan <- kWayCrossValidation(nRows, 3, NULL, NULL)
+
+str(splitPlan)
+```
+### Run Crossfold
+
+```{r}
+#| label: runcrossfold
+#| echo: False
+
+crossfold_df <- performance_df
+
+k <- 3
+crossfold_df$ERP.cv <- 0
+
+for (i in 1:k) {
+  split <- splitPlan[[i]]
+  model <- lm(PRP ~ MYCT + MMAX + CACH, data = crossfold_df[split$train, ])
+  crossfold_df$ERP.cv[split$app] <- predict(model, newdata = crossfold_df[split$app, ])
+}
+
+crossfold_df$ERP <- predict(lm(PRP ~ MYCT + MMAX + CACH, data = crossfold_df))
+
+cat('RMSE on full model :', RMSE(crossfold_df$ERP, crossfold_df$PRP))
+  
+```
+
+```{r}
+#| label: crossfoldrmse
+#| echo: False
+
+cat('RMSE of the cross-validation predictions: ', RMSE(crossfold_df$ERP.cv, crossfold_df$PRP))
+```
+
+
+
+
